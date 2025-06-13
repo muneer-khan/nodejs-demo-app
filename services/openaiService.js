@@ -21,7 +21,8 @@ async function getDemoResponses(messages) {
     "drop-off-address": null,
     "drop-off-name": null,
     "item": "{peparoni medium pizza: 1, cheese pizza: 1, coke: 2}",
-    "notes": "Please pick up the order from Pizza Pizza and deliver it to my home address."
+    "notes": "Please pick up the order from Pizza Pizza and deliver it to my home address.",
+    "topic": "Pickup request"
   }
   const demo_dropoff = {
     "intent": "dropoff",
@@ -30,7 +31,8 @@ async function getDemoResponses(messages) {
     "drop-off-address": null,
     "drop-off-name": "Staples",
     "item": "{package: 1}",
-    "notes": "Please drop off the package at Staples."
+    "notes": "Please drop off the package at Staples.",
+    "topic": "Dropoff request"
   }
 
   const demo_pickup_full_address = {
@@ -40,7 +42,8 @@ async function getDemoResponses(messages) {
     "drop-off-address": null,
     "drop-off-name": null,
     "item": "{package: 1}",
-    "notes": "Please pick up the package from 2235 Sheppard Ave, E, Scarborough, ON and deliver it to my home address."
+    "notes": "Please pick up the package from 2235 Sheppard Ave, E, Scarborough, ON and deliver it to my home address.",
+    "topic": "Pickup request"
   }
   const demo_dropoff_full_address = {
     "intent": "dropoff",
@@ -49,7 +52,8 @@ async function getDemoResponses(messages) {
     "drop-off-address": "564 Pharmacy Ave, Scarborough, ON",
     "drop-off-name": "",
     "item": "{package: 1}",
-    "notes": "Please drop off the package at 564 Pharmacy Ave, Scarborough, ON."
+    "notes": "Please drop off the package at 564 Pharmacy Ave, Scarborough, ON.",
+    "topic": "Dropoff request"
   }
 
   const demo_suggestion = {
@@ -59,7 +63,8 @@ async function getDemoResponses(messages) {
     "drop-off-address": null,
     "drop-off-name": null,
     "item": "Pizza",
-    "notes": "Suggesting a pizza place near the user's location"
+    "notes": "Suggesting a pizza place near the user's location",
+    "topic": "Food suggestion"
   }
   const demo_information = {
     "intent": "information",
@@ -68,7 +73,8 @@ async function getDemoResponses(messages) {
     "drop-off-address": null,
     "drop-off-name": null,
     "item": "Burger",
-    "notes": "Dietry information"
+    "notes": "Dietry information",
+    "topic": "Nutritional information"
   }
   const demo_out_of_scope = {
     "intent": "out-of-scope",
@@ -77,7 +83,8 @@ async function getDemoResponses(messages) {
     "drop-off-address": null,
     "drop-off-name": null,
     "item": null,
-    "notes": null
+    "notes": null,
+    "topic": "Out of scope"
   }
   if( messages.includes("pickup address")) {
     return { content: demo_pickup_full_address };
@@ -91,7 +98,7 @@ async function getDemoResponses(messages) {
   if( messages.includes("dropoff")) {
     return { content: demo_dropoff };
   }
-  if( messages.includes("suggestion")) {
+  if( messages.includes("suggest")) {
     return { content: demo_suggestion };
   }
   if( messages.includes("information")) {
