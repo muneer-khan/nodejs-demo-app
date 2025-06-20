@@ -30,6 +30,25 @@ async function searchPlaces({ query, nearLocation, type = 'place' }) {
   return results.slice(0, limit);
 }
 
+function isValidAddress(address) {
+  if (!address || typeof address !== 'string') return false;
+
+  // Trim and normalize
+  address = address.trim();
+
+  // A very basic rule: starts with a number, followed by 2 or more words with letters
+  const addressRegex = /^\d{1,6}[\w\s\-\,\.]{3,}$/i;
+
+  // Must have at least 2 letter-based words (not just numbers or noise)
+  const wordParts = address.match(/[a-zA-Z]{2,}/g);
+
+  return addressRegex.test(address) && wordParts && wordParts.length >= 2;
+}
+
+async function getFullAddress(address) {
+  return "2235 Sheppard Ave E, North York, ON, M1L 3G9"
+}
+
 module.exports = {
-  searchPlaces
+  searchPlaces, isValidAddress, getFullAddress
 };

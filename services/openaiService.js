@@ -56,7 +56,18 @@ async function getDemoNewOrderResponses(messages) {
     "topic": "Dropoff request"
   }
 
-  const demo_suggestion = {
+  const demo_suggestion_pickup = {
+    "intent": "suggest-pickup",
+    "pickup-address": null,
+    "pickup-place": null,
+    "dropoff-address": null,
+    "dropoff-place": null,
+    "items": [{item: "Pizza", quantity: 1}],
+    "notes": "Suggesting a pizza place near the user's location",
+    "topic": "Food suggestion"
+  }
+
+    const demo_suggestion = {
     "intent": "suggestion",
     "pickup-address": null,
     "pickup-place": null,
@@ -66,6 +77,18 @@ async function getDemoNewOrderResponses(messages) {
     "notes": "Suggesting a pizza place near the user's location",
     "topic": "Food suggestion"
   }
+
+  const demo_suggestion_dropoff = {
+    "intent": "suggest-dropoff",
+    "pickup-address": null,
+    "pickup-place": null,
+    "dropoff-address": null,
+    "dropoff-place": null,
+    "items": [{item: "package", quantity: 1}],
+    "notes": "Suggesting staples near the user's location",
+    "topic": "Amazon package dropoff suggestion"
+  }
+
   const demo_information = {
     "intent": "information",
     "pickup-address": null,
@@ -92,13 +115,19 @@ async function getDemoNewOrderResponses(messages) {
   if( messages.includes("dropoff address")) {
     return { content: demo_dropoff_full_address };
   }
+  if( messages.includes("suggest pickup")) {
+    return { content: demo_suggestion_pickup };
+  }
+  if( messages.includes("suggest dropoff")) {
+    return { content: demo_suggestion_dropoff };
+  }
   if( messages.includes("pickup")) {
     return { content: demo_pickup };
   }
   if( messages.includes("dropoff")) {
     return { content: demo_dropoff };
   }
-  if( messages.includes("suggest")) {
+  if( messages.includes("suggestion")) {
     return { content: demo_suggestion };
   }
   if( messages.includes("information")) {
@@ -107,7 +136,7 @@ async function getDemoNewOrderResponses(messages) {
   if( messages.includes("out of scope")) {
     return {content: demo_out_of_scope };
   }
-  return null;
+  return { content: demo_out_of_scope };
 }
 
 async function getDemoExistingOrderResponse(params) {
@@ -140,6 +169,17 @@ const cancel_order = {
   "items": null,
   "notes": null
 }
+
+const confirm_order = {
+  "action": "confirm-order",
+  "pickup-address": null,
+  "pickup-place": null,
+  "dropoff-address": null,
+  "dropoff-place": null,
+  "items": null,
+  "notes": null
+}
+
 const modify_pickup_place = {
   "action": "modify-order",
   "pickup-address": null,
@@ -201,7 +241,10 @@ const out_of_scope = {
   if( params.includes("new order")) {
     return { content: new_order };
   }
-  return null;
+  if( params.includes("confirm")) {
+    return { content: confirm_order };
+  }
+  return { content: out_of_scope };
 }
 
 module.exports = { getDemoNewOrderResponses, getAIResponse, getDemoExistingOrderResponse};

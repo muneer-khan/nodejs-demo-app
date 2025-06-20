@@ -1,5 +1,8 @@
 async function resolveAddress(aiResponse, userLocation) {
-      const {
+    if(!aiResponse) {
+        return null;
+    }
+    const {
     intent,
     "pickup-place": aiPickupPlace,
     "pickup-address": aiPickupAddress,
@@ -9,12 +12,12 @@ async function resolveAddress(aiResponse, userLocation) {
 
     let address = {};
 
-    if(intent === "pickup") {
+    if(intent === "pickup" || intent === "suggest-pickup") {
         address.pickupAddress = aiPickupAddress;
         address.pickupPlace = aiPickupPlace;
         address.dropoffAddress = userLocation;
         address.dropoffPlace = aiDropoffPlace;
-    } else if(intent === "dropoff") {
+    } else if(intent === "dropoff" || intent === "suggest-dropoff") {
         address.pickupAddress = userLocation;
         address.pickupPlace = aiPickupPlace;
         address.dropoffAddress = aiDropoffAddress;

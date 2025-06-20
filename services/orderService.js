@@ -7,16 +7,18 @@ async function modifyOrder(orderId, updates = {}) {
     const orderSnapshot = await orderRef.get();
 
     if (!orderSnapshot.exists) {
-      throw new Error('Order not found');
+      return { success: false, reason: 'order_not_found', hasAllRequired: false };
     }
     
     const orderData = orderSnapshot.data();
     console.log("order found", orderData);
+    console.log("updates", updates);
     
     if (orderData.status === 'confirmed' || orderData.status === 'cancelled') {
       return {
         success: false,
         reason: 'not_modifiable',
+        hasAllRequired: false,
         message: 'Order cannot be modified once confirmed or already cancelled'
       };
     }
@@ -48,7 +50,7 @@ async function modifyOrder(orderId, updates = {}) {
 
     await orderRef.update(updatePayload);
 
-    return { success: true, message: 'Order updated successfully', updates: updatePayload };
+    return { success: true, message: 'Order updated successfully', hasAllRequired: hasAllRequired };
   } catch (error) {
     console.error('Error modifying order:', error.message);
     return { success: false, reason: 'error',error: error.message };
@@ -95,16 +97,16 @@ async function createOrder({
 
   const orderRef = await db.collection('orders').add(orderData);
 
-  return { orderId: orderRef.id, status, order_number: orderNumber };
+  return { orderId: orderRef.id, status, order_number: orderNumber, hasAllRequired: hasAllRequired };
 }
 
-async function cancelOrder(orderId) {
+async function updateOrderStatus(orderId, status) {
   try {
     const orderRef = await db.collection('orders').doc(orderId);
     const orderSnapshot = await orderRef.get();
 
     if (!orderSnapshot.exists) {
-      throw new Error('Order not found');
+       return { success: false, reason: "order_not_found" };
     }
 
     const orderData = orderSnapshot.data();
@@ -120,18 +122,62 @@ async function cancelOrder(orderId) {
     }
 
     await orderRef.update({
-      status: 'cancelled',
+      status: status,
       updated_at: new Date()
     });
 
-    return { success: true, message: 'Order cancelled successfully' };
+    return { success: true, message: `Order ${updateOrderStatus} successfully`, orderNo: orderData.order_number };
   } catch (error) {
-    console.error('Error cancelling order:', error.message);
+    console.error('Error modyfying order status:', error.message);
     return { success: false, reason: 'error', error: error.message };
+  }
+}
+
+async function isOrderActive(orderId) {
+  if (!orderId) {
+    return false;
+  }
+
+  try {
+    const orderRef = db.collection('orders').doc(orderId);
+    const orderSnapshot = await orderRef.get();
+
+    if (!orderSnapshot.exists) {
+      return false;
+    }
+
+    const orderData = orderSnapshot.data();
+
+    // Consider the order inactive if it's confirmed or cancelled
+    if (orderData.status === 'confirmed' || orderData.status === 'cancelled') {
+      return false;
+    }
+
+    return true; // Order is active (e.g., incomplete or pending)
+  } catch (error) {
+    console.error('Error checking order status:', error.message);
+    return false; // Treat errors as non-active status
+  }
+}
+
+async function getOrderIntent(orderId) {
+  try {
+    const orderRef = await db.collection('orders').doc(orderId);
+    const orderSnapshot = await orderRef.get();
+
+    if (!orderSnapshot.exists) {
+      return null;
+    }
+    
+    const orderData = orderSnapshot.data();
+    return orderData.intent;
+  } catch (error) {
+    console.error('Error fetching order intent:', error.message);
+    return null; // Treat errors as non-active status
   }
 }
 
 
 module.exports = {
-  createOrder, modifyOrder, cancelOrder
+  createOrder, modifyOrder, isOrderActive, getOrderIntent, updateOrderStatus
 };
