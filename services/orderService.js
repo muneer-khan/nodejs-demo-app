@@ -14,7 +14,8 @@ async function modifyOrder(orderId, updates = {}) {
     console.log("order found", orderData);
     console.log("updates", updates);
     
-    if (orderData.status === 'confirmed' || orderData.status === 'cancelled') {
+    if (orderData.status === 'cancelled' || 
+        (orderData.status === 'confirmed' && orderData.payment_status == "success")) {
       return {
         success: false,
         reason: 'not_modifiable',
@@ -90,6 +91,8 @@ async function createOrder({
     notes, notes,
     chatSessionId: chatSessionId,
     package_status: packageStatus,
+    payment_status: null,
+    payment_type: null,
     created_from: "chat",
     created_at: createdAt,
     updated_at: updatedAt,
@@ -126,7 +129,41 @@ async function updateOrderStatus(orderId, status) {
       updated_at: new Date()
     });
 
-    return { success: true, message: `Order ${updateOrderStatus} successfully`, orderNo: orderData.order_number };
+    return { success: true, message: `Order ${status} successfully`, orderNo: orderData.order_number };
+  } catch (error) {
+    console.error('Error modyfying order status:', error.message);
+    return { success: false, reason: 'error', error: error.message };
+  }
+}
+
+async function updatePaymentStatus(orderId, status, paymentType) {
+  try {
+    const orderRef = await db.collection('orders').doc(orderId);
+    const orderSnapshot = await orderRef.get();
+
+    if (!orderSnapshot.exists) {
+       return { success: false, reason: "order_not_found" };
+    }
+
+    const orderData = orderSnapshot.data();
+    console.log("orderData", orderData);
+    
+
+    if (orderData.status != 'confirmed') {
+      return {
+        success: false,
+        reason: 'not_confirmed',
+        message: 'Payment cannot be updated until order confirmed'
+      };
+    }
+
+    await orderRef.update({
+      payment_status: status,
+      payment_type: paymentType,
+      updated_at: new Date()
+    });
+
+    return { success: true, message: `Order payment status updated successfully`, orderNo: orderData.order_number };
   } catch (error) {
     console.error('Error modyfying order status:', error.message);
     return { success: false, reason: 'error', error: error.message };
@@ -149,7 +186,11 @@ async function isOrderActive(orderId) {
     const orderData = orderSnapshot.data();
 
     // Consider the order inactive if it's confirmed or cancelled
-    if (orderData.status === 'confirmed' || orderData.status === 'cancelled') {
+    if (orderData.status === 'cancelled') {
+      return false;
+    }
+
+    if(orderData.status === 'confirmed' && orderData.payment_status === "success") {
       return false;
     }
 
@@ -179,5 +220,5 @@ async function getOrderIntent(orderId) {
 
 
 module.exports = {
-  createOrder, modifyOrder, isOrderActive, getOrderIntent, updateOrderStatus
+  createOrder, modifyOrder, isOrderActive, getOrderIntent, updateOrderStatus, updatePaymentStatus
 };

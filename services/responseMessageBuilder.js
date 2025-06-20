@@ -5,6 +5,7 @@ async function generateCustomMessage({
   placeName = '',
   items = '',
   orderNo = '',
+  hasAllRequired = false
 }) {
 
   switch (intent) {
@@ -50,7 +51,7 @@ async function generateCustomMessage({
       } else if(status === "error") {
         return `Error modifying your order`
       } else {
-        return `Your order has been modified successfully. If you need help with anything else, just let me know!`;  
+        return `Your order has been modified successfully. ${hasAllRequired ? 'Please confirm your order or modify the items if you need.' : 'Please complete your order'}`;  
       }
     case 'confirm-order':
       if(status === "not_confirmed") {

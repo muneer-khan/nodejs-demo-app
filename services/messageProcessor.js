@@ -1,5 +1,5 @@
 const { generateCustomMessage } = require("./responseMessageBuilder");
-const { modifyOrder, updateOrderStatus, createOrder } = require("./orderService");
+const { modifyOrder, updateOrderStatus, createOrder, updatePaymentStatus } = require("./orderService");
 const { searchPlaces, getFullAddress } = require("./mapsService");
 const { getPrompt } = require("./promptService");
 const { getDemoExistingOrderResponse, getDemoNewOrderResponses} = require('../services/openaiService');
@@ -60,18 +60,22 @@ async function handleActiveOrder(data, userLocation, userId, orderId) {
   } = data;
   let message;
   let newOrderId = orderId;
+  let newSuggestions;
+  let newSuggestionType;
 
   if(action === "modify-order") { 
-    const result = await modifyOrder(orderId, aiResponse);
+    const result = await modifyOrder(orderId, data);
     if(result.success) {
-      message = await generateCustomMessage({intent: action});
+      newSuggestions = await getSugestionForCompleteOrder(result.hasAllRequired);
+      newSuggestionType = "order-confirmation"
+      message = await generateCustomMessage({intent: action, hasAllRequired: result.hasAllRequired});
     } else {
       message = await generateCustomMessage({intent: action, status: result.reason});
     }
   } else if(action === "confirm-order") { 
-    return handleOrderConfirmation("confirm", orderId)
+    return await handleOrderConfirmation("confirm", orderId)
   } else if(action === "cancel-order") {
-    return handleOrderConfirmation("cancel", orderId)
+    return await handleOrderConfirmation("cancel", orderId)
   } else if(action === "information") {
     return {
       reply: notes,
@@ -87,11 +91,18 @@ async function handleActiveOrder(data, userLocation, userId, orderId) {
   return {
       reply: message,
       orderId: newOrderId,
-      suggestions: null
+      suggestions: newSuggestions,
+      suggestionType: newSuggestionType
   };
 }
 
-async function handleNewOrder(aiResponse, userLocation) {
+async function getSugestionForCompleteOrder(hasAllRequired) {
+  return hasAllRequired
+      ? [{ name: "Confirm Order" }, { name: "Cancel Order" }]
+      : null
+}
+
+async function handleNewOrder(data, userLocation) {
     const {
     intent,
     "pickup-place": aiPickupPlace,
@@ -100,9 +111,9 @@ async function handleNewOrder(aiResponse, userLocation) {
     "dropoff-address": aiDropoffAddress,
     items,
     notes
-  } = aiResponse;
+  } = data;
 
-  console.log('Parsed Intent:', aiResponse);
+  console.log('Parsed Intent:', data);
   
   if (intent === "pickup" || intent === "dropoff") {
     const placeResolution = await resolvePlace({
@@ -176,7 +187,7 @@ async function resolvePlace({
     
     return {
       status: 'complete',
-      suggestions: [{ name: "Confirm" }, { name: "Cancel" }],
+      suggestions: getSugestionForCompleteOrder(true),
       suggestionType: "order-confirmation"
     };
   }
@@ -213,9 +224,10 @@ async function resolvePlace({
 async function handleSelectionMessage(userSelection, selectedSuggestionType, userId, orderId) {
   switch (selectedSuggestionType) {
     case "order-confirmation":
-      return handleOrderConfirmation(userSelection, orderId);
+      const action = await getOrderConfirmationAction(userSelection);
+      return handleOrderConfirmation(action, orderId);
     case "payment-types":
-      return handlePayment(userSelection);
+      return handlePayment(userSelection, orderId);
     case "suggest-pickup":
     case "suggest-dropoff":
     case "pickup":
@@ -246,6 +258,7 @@ async function handleOrderConfirmation(action, orderId) {
       return {
         reply: newMessage,
         suggestions: paymentTypes,
+        orderId: orderId,
         suggestionType: "payment-types"
       };
     } else {
@@ -262,13 +275,21 @@ async function handleOrderConfirmation(action, orderId) {
   }
 }
 
+async function getOrderConfirmationAction(userMessage) {
+  if(userMessage == "Confirm Order") {
+    return "confirm"
+  } else if (userMessage == "Cancel Order") {
+    return "cancel"
+  }
+}
 
 async function confirmOrder(orderId) {
   const result = await updateOrderStatus(orderId, "confirmed");
   return result;
 }
 
-async function handlePayment(userSelection) {
+async function handlePayment(userSelection, orderId) {
+  const result = await updatePaymentStatus(orderId, "success", userSelection)
   const newMessage = await generateCustomMessage({ intent: "payment-success", method: userSelection });
   return { reply: newMessage, suggestions: null };
 }
@@ -293,12 +314,10 @@ async function handleAddressSelection(suggestionType, userSelection, orderId) {
       ? result.hasAllRequired ? "order-complete" : "order-pending"
       : result.reason || "error"
   });
-
+  newSuggestions = await getSugestionForCompleteOrder(result.hasAllRequired);
   return {
     reply: newMessage,
-    suggestions: result.hasAllRequired
-      ? [{ name: "Confirm" }, { name: "Cancel" }]
-      : null,
+    suggestions: newSuggestions,
     orderId,
     suggestionType: result.hasAllRequired ? "order-confirmation" : suggestionType
   };
