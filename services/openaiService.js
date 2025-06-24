@@ -9,27 +9,40 @@ async function getAIResponse(messages) {
     model: 'gpt-4o-mini',
     messages
   });
+  const content = completion.choices[0].message.content;
 
-  return completion.choices[0].message;
+  console.log(content);
+  
+  try {
+    const json = JSON.parse(content);
+    return json;
+  } catch (error) {
+    console.error('Failed to parse JSON:', error);
+    console.log('Raw content:', content);
+    return null;
+  }
 }
 
 async function getDemoNewOrderResponses(messages) {
+
+  const demo = {
+  "intent": "pickup",
+  "pickupPlace": "Pizza Hut",
+  "items": [
+    {"item": "medium pepperoni pizza", "qty": 2},
+    {"item": "coke", "qty": 2}
+  ]
+  }
   const demo_pickup = {
     "intent": "pickup",
-    "pickup-address": null,
-    "pickup-place": "Pizza Pizza",
-    "dropoff-address": null,
-    "dropoff-place": null,
+    "pickupPlace": "Pizza Pizza",
     "items": [{item: "peparoni medium pizza", quantity: 1}, {item: "cheese pizza", quantity: 1}, {item: "coke", quantity: 2}],
     "notes": "Please pick up the order from Pizza Pizza and deliver it to my home address.",
     "topic": "Pickup request"
   }
   const demo_dropoff = {
     "intent": "dropoff",
-    "pickup-address": null,
-    "pickup-place": null,
-    "dropoff-address": null,
-    "dropoff-place": "Staples",
+    "dropoffPlace": "Staples",
     "items": [{item: "package", quantity: 1}],
     "notes": "Please drop off the package at Staples.",
     "topic": "Dropoff request"
@@ -37,31 +50,21 @@ async function getDemoNewOrderResponses(messages) {
 
   const demo_pickup_full_address = {
     "intent": "pickup",
-    "pickup-address": "2235 Sheppard Ave, E, Scarborough, ON",
-    "pickup-place": "",
-    "dropoff-address": null,
-    "dropoff-place": null,
+    "pickupAddress": "2235 Sheppard Ave, E, Scarborough, ON",
     "items": [{item: "package", quantity: 1}],
     "notes": "Please pick up the package from 2235 Sheppard Ave, E, Scarborough, ON and deliver it to my home address.",
     "topic": "Pickup request"
   }
   const demo_dropoff_full_address = {
     "intent": "dropoff",
-    "pickup-address": null,
-    "pickup-place": null,
-    "dropoff-address": "564 Pharmacy Ave, Scarborough, ON",
-    "dropoff-place": "",
+    "dropoffAddress": "564 Pharmacy Ave, Scarborough, ON",
     "items": [{item: "package", quantity: 1}],
     "notes": "Please drop off the package at 564 Pharmacy Ave, Scarborough, ON.",
     "topic": "Dropoff request"
   }
 
   const demo_suggestion_pickup = {
-    "intent": "suggest-pickup",
-    "pickup-address": null,
-    "pickup-place": null,
-    "dropoff-address": null,
-    "dropoff-place": null,
+    "intent": "suggestPickup",
     "items": [{item: "Pizza", quantity: 1}],
     "notes": "Suggesting a pizza place near the user's location",
     "topic": "Food suggestion"
@@ -69,182 +72,138 @@ async function getDemoNewOrderResponses(messages) {
 
     const demo_suggestion = {
     "intent": "suggestion",
-    "pickup-address": null,
-    "pickup-place": null,
-    "dropoff-address": null,
-    "dropoff-place": null,
     "items": [{item: "Pizza", quantity: 1}],
     "notes": "Suggesting a pizza place near the user's location",
     "topic": "Food suggestion"
   }
 
   const demo_suggestion_dropoff = {
-    "intent": "suggest-dropoff",
-    "pickup-address": null,
-    "pickup-place": null,
-    "dropoff-address": null,
-    "dropoff-place": null,
+    "intent": "suggestDropoff",
     "items": [{item: "package", quantity: 1}],
     "notes": "Suggesting staples near the user's location",
     "topic": "Amazon package dropoff suggestion"
   }
 
   const demo_information = {
-    "intent": "information",
-    "pickup-address": null,
-    "pickup-place": null,
-    "dropoff-address": null,
-    "dropoff-place": null,
+    "intent": "info",
     "items": [{item: "Burger", quantity: 1}],
     "notes": "Dietry information",
     "topic": "Nutritional information"
   }
   const demo_out_of_scope = {
-    "intent": "out-of-scope",
-    "pickup-address": null,
-    "pickup-place": null,
-    "dropoff-address": null,
-    "dropoff-place": null,
-    "item": null,
-    "notes": null,
-    "topic": "Out of scope"
+    "intent": "oos"
   }
   if( messages.includes("pickup address")) {
-    return { content: demo_pickup_full_address };
+    return demo_pickup_full_address ;
   }
   if( messages.includes("dropoff address")) {
-    return { content: demo_dropoff_full_address };
+    return demo_dropoff_full_address ;
   }
   if( messages.includes("suggest pickup")) {
-    return { content: demo_suggestion_pickup };
+    return demo_suggestion_pickup ;
   }
   if( messages.includes("suggest dropoff")) {
-    return { content: demo_suggestion_dropoff };
+    return demo_suggestion_dropoff ;
   }
   if( messages.includes("pickup")) {
-    return { content: demo_pickup };
+    return  demo_pickup;
   }
   if( messages.includes("dropoff")) {
-    return { content: demo_dropoff };
+    return demo_dropoff ;
   }
   if( messages.includes("suggestion")) {
-    return { content: demo_suggestion };
+    return demo_suggestion ;
   }
   if( messages.includes("information")) {
-    return { content: demo_information };
+    return demo_information ;
   }
   if( messages.includes("out of scope")) {
-    return {content: demo_out_of_scope };
+    return demo_out_of_scope ;
   }
-  return { content: demo_out_of_scope };
+  if( messages.includes("demo")) {
+    return demo;
+  }
+  return demo_out_of_scope ;
 }
 
 async function getDemoExistingOrderResponse(params) {
-  const modify_item_pickupaddress = {
-    "action": "modify-order",
-    "pickup-address": null,
-    "pickup-place": null,
-    "dropoff-address": "25 Main Street",
-    "dropoff-place": null,
-    "items": [{item: "garlic bread", quantity: 1}],
-    "notes": null
+  const demo_replace_item = {
+    "action": "modify",
+    "items": [{type: "replace", item: "garlic bread", newItem: "pizza"}],
+  }
+
+  const demo_add_item = {
+    "action": "modify",
+    "items": [{type: "add", item: "garlic bread", quantity: 1}],
+  }
+
+  const demo_remove_item = {
+    "action": "modify",
+    "items": [{type: "remove", item: "pizza", quantity: 1}],
   }
 
   const new_order = {
-    "action": "new-order",
-    "pickup-address": null,
-    "pickup-place": null,
-    "dropoff-address": null,
-    "dropoff-place": null,
-    "items": [],
-    "notes": "User want to create a new order."
+    "action": "newOrder"
   }
 
 const cancel_order = {
-  "action": "cancel-order",
-  "pickup-address": null,
-  "pickup-place": null,
-  "dropoff-address": null,
-  "dropoff-place": null,
-  "items": null,
-  "notes": null
+  "action": "cancel",
 }
 
 const confirm_order = {
-  "action": "confirm-order",
-  "pickup-address": null,
-  "pickup-place": null,
-  "dropoff-address": null,
-  "dropoff-place": null,
-  "items": null,
-  "notes": null
+  "action": "confirm",
 }
 
 const modify_pickup_place = {
-  "action": "modify-order",
-  "pickup-address": null,
-  "pickup-place": "Joe’s Pizza",
-  "dropoff-address": null,
-  "dropoff-place": null,
-  "items": null,
-  "notes": null
+  "action": "modify",
+  "pickupPlace": "Joe’s Pizza",
 }
 
-const modify_item = {
-  "action": "modify-order",
-  "pickup-address": null,
-  "pickup-place": null,
-  "dropoff-address": null,
-  "dropoff-place": null,
-  "items": [{item: "garlic bread", quantity: 1}],
-  "notes": null
+const demo_modify_address = {
+  "action": "modify",
+  "pickupAddress": "2235 Sheppard Ave, E, Scarborough, ON"
 }
 
 const information = {
-  "action": "information",
-  "pickup-address": null,
-  "pickup-place": null,
-  "dropoff-address": null,
-  "dropoff-place": null,
-  "items": null,
+  "action": "info",
   "notes": "It looks like you're asking about your order status. Please contact support or check your tracking link."
 }
 
 
 const out_of_scope = {
-  "action": "out-of-scope",
-  "pickup-address": null,
-  "pickup-place": null,
-  "dropoff-address": null,
-  "dropoff-place": null,
-  "items": null,
-  "notes": null
+  "action": "oos",
 }
-  if( params.includes("modify item pickup") ) {
-    return { content: modify_item_pickupaddress };
+  if( params.includes("add") ) {
+    return demo_add_item ;
   }
-  if( params.includes("cancel order") ) {
-    return { content: cancel_order };
+  if( params.includes("replace") ) {
+    return demo_replace_item ;
+  }
+  if( params.includes("remove") ) {
+    return demo_remove_item ;
+  }
+  if( params.includes("cancel") ) {
+    return cancel_order ;
   }
   if( params.includes("modify place") ) {
-    return { content: modify_pickup_place };
+    return modify_pickup_place ;
   }
-  if( params.includes("modify item") ) {
-    return { content: modify_item };
+  if( params.includes("change address") ) {
+    return demo_modify_address ;
   }
   if( params.includes("information") ) {
-    return { content: information };
+    return information ;
   }
   if( params.includes("out of scope")) {
-    return { content: out_of_scope };
+    return out_of_scope ;
   }
   if( params.includes("new order")) {
-    return { content: new_order };
+    return new_order ;
   }
   if( params.includes("confirm")) {
-    return { content: confirm_order };
+    return confirm_order ;
   }
-  return { content: out_of_scope };
+  return out_of_scope ;
 }
 
 module.exports = { getDemoNewOrderResponses, getAIResponse, getDemoExistingOrderResponse};

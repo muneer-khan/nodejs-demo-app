@@ -1,8 +1,9 @@
 const { generateCustomMessage } = require("./responseMessageBuilder");
-const { modifyOrder, updateOrderStatus, createOrder, updatePaymentStatus } = require("./orderService");
+const { modifyOrder, updateOrderStatus, createOrder, updatePaymentStatus, itemExists, addItem, modifyItem } = require("./orderService");
 const { searchPlaces, getFullAddress } = require("./mapsService");
 const { getPrompt } = require("./promptService");
-const { getDemoExistingOrderResponse, getDemoNewOrderResponses} = require('../services/openaiService');
+const { getDemoExistingOrderResponse, getDemoNewOrderResponses, getAIResponse} = require('../services/openaiService');
+const { response } = require("express");
 
 async function handleTextMessage(userMessage, hasActiveOrder) {
   const systemPrompt = await getPrompt(hasActiveOrder ? "active_order" : "new_order");
@@ -18,7 +19,7 @@ async function handleTextMessage(userMessage, hasActiveOrder) {
     ? await getDemoExistingOrderResponse(userMessage)
     : await getDemoNewOrderResponses(userMessage);
 
-  const topic = hasActiveOrder ? null : aiResponse.content.topic || "General Inquiry";
+  const topic = hasActiveOrder ? null : aiResponse.topic || "General Inquiry";
   return { aiResponse, topic };
 }
 
@@ -51,10 +52,10 @@ async function handleAiResponse(data, userLocation, userHasActiveOrder, userId, 
 async function handleActiveOrder(data, userLocation, userId, orderId) {  
   const {
     action,
-    "pickup-place": pickupPlace,
-    "pickup-address": pickupAddress,
-    "dropoff-place": dropoffPlace,
-    "dropoff-address": dropoffAddress,
+    pickupPlace,
+    pickupAddress,
+    dropoffPlace,
+    dropoffAddress,
     items,
     notes
   } = data;
@@ -63,28 +64,28 @@ async function handleActiveOrder(data, userLocation, userId, orderId) {
   let newSuggestions;
   let newSuggestionType;
 
-  if(action === "modify-order") { 
-    const result = await modifyOrder(orderId, data);
+  if(action === "modify") { 
+    const result = await updateOrderData(orderId, data);
     if(result.success) {
       newSuggestions = await getSugestionForCompleteOrder(result.hasAllRequired);
-      newSuggestionType = "order-confirmation"
+      newSuggestionType = "orderConfirmation"
       message = await generateCustomMessage({intent: action, hasAllRequired: result.hasAllRequired});
     } else {
-      message = await generateCustomMessage({intent: action, status: result.reason});
+      message = await generateCustomMessage({intent: action, status: "failed", reason});
     }
-  } else if(action === "confirm-order") { 
+  } else if(action === "confirm") { 
     return await handleOrderConfirmation("confirm", orderId)
-  } else if(action === "cancel-order") {
+  } else if(action === "cancel") {
     return await handleOrderConfirmation("cancel", orderId)
-  } else if(action === "information") {
+  } else if(action === "info") {
     return {
       reply: notes,
       orderId: newOrderId,
       suggestions: null
     };
-  } else if(action === "out-of-scope") {
+  } else if(action === "oos") {
     message = await generateCustomMessage({intent: action});
-  } else if(action === "new-order") {
+  } else if(action === "newOrder") {
     message = await generateCustomMessage({intent: action});
     newOrderId = ''
   }
@@ -105,10 +106,10 @@ async function getSugestionForCompleteOrder(hasAllRequired) {
 async function handleNewOrder(data, userLocation) {
     const {
     intent,
-    "pickup-place": aiPickupPlace,
-    "pickup-address": aiPickupAddress,
-    "dropoff-place": aiDropoffPlace,
-    "dropoff-address": aiDropoffAddress,
+    pickupPlace,
+    pickupAddress,
+    dropoffPlace,
+    dropoffAddress,
     items,
     notes
   } = data;
@@ -117,8 +118,8 @@ async function handleNewOrder(data, userLocation) {
   
   if (intent === "pickup" || intent === "dropoff") {
     const placeResolution = await resolvePlace({
-      placeName: aiPickupPlace || aiDropoffPlace,
-      address: aiPickupAddress || aiDropoffAddress,
+      placeName: pickupPlace || dropoffPlace,
+      address: pickupAddress || dropoffAddress,
       fallbackLocation: userLocation,
     });
     
@@ -126,7 +127,7 @@ async function handleNewOrder(data, userLocation) {
       intent,
       role: intent,
       status: placeResolution.status,
-      placeName: aiPickupPlace || aiDropoffPlace,
+      placeName: pickupPlace || dropoffPlace,
       items: items[0].item
     });
 
@@ -137,14 +138,14 @@ async function handleNewOrder(data, userLocation) {
     };
   }
 
-  if (intent === "information" || intent === "greetings") {
+  if (intent === "info" || intent === "greetings") {
     return {
       reply: notes,
       suggestions: null
     };
   }
 
-  if (intent === "out-of-scope") {
+  if (intent === "oos") {
     const message = await generateCustomMessage({intent});
 
     return {
@@ -153,7 +154,7 @@ async function handleNewOrder(data, userLocation) {
     };
   }
 
-  if (intent === "suggestion" || intent === "suggest-pickup" || intent === "suggest-dropoff") {
+  if (intent === "suggestion" || intent === "suggestPickup" || intent === "suggestDropoff") {
     const message = await generateCustomMessage({intent, items: items[0].item});
     if(items.length > 0) {
       const suggestions = await searchPlaces({
@@ -184,11 +185,11 @@ async function resolvePlace({
   console.log('Resolving place with:', { placeName, address, fallbackLocation });
   
   if (address) {
-    
+    const orderConfirmSuggestion = await getSugestionForCompleteOrder(true);
     return {
       status: 'complete',
-      suggestions: getSugestionForCompleteOrder(true),
-      suggestionType: "order-confirmation"
+      suggestions: orderConfirmSuggestion,
+      suggestionType: "orderConfirmation"
     };
   }
 
@@ -223,13 +224,13 @@ async function resolvePlace({
 
 async function handleSelectionMessage(userSelection, selectedSuggestionType, userId, orderId) {
   switch (selectedSuggestionType) {
-    case "order-confirmation":
+    case "orderConfirmation":
       const action = await getOrderConfirmationAction(userSelection);
       return handleOrderConfirmation(action, orderId);
-    case "payment-types":
+    case "paymentTypes":
       return handlePayment(userSelection, orderId);
-    case "suggest-pickup":
-    case "suggest-dropoff":
+    case "suggestPickup":
+    case "suggestDropoff":
     case "pickup":
     case "dropoff":
       return handleAddressSelection(selectedSuggestionType, userSelection, orderId);
@@ -254,21 +255,21 @@ async function handleOrderConfirmation(action, orderId) {
         { name: "Applepay" },
         { name: "Paypal" }
       ];
-      newMessage = await generateCustomMessage({ intent: "confirm-order", orderNo: result.orderNo });
+      newMessage = await generateCustomMessage({ intent: "confirmOrder", orderNo: result.orderNo });
       return {
         reply: newMessage,
         suggestions: paymentTypes,
         orderId: orderId,
-        suggestionType: "payment-types"
+        suggestionType: "paymentTypes"
       };
     } else {
-      newMessage = await generateCustomMessage({ intent: "confirm-order", status: result.reason });
+      newMessage = await generateCustomMessage({ intent: "confirmOrder", status: result.reason });
       return { reply: newMessage, suggestions: null, orderId: null };
     }
   } else if (action.toLowerCase() === "cancel") {
     const result = await cancelOrder(orderId);
     newMessage = await generateCustomMessage({
-      intent: "cancel-order",
+      intent: "cancelOrder",
       status: result.success ? undefined : result.reason
     });
     return { reply: newMessage, suggestions: null };
@@ -290,14 +291,14 @@ async function confirmOrder(orderId) {
 
 async function handlePayment(userSelection, orderId) {
   const result = await updatePaymentStatus(orderId, "success", userSelection)
-  const newMessage = await generateCustomMessage({ intent: "payment-success", method: userSelection });
+  const newMessage = await generateCustomMessage({ intent: "paymentSuccess", method: userSelection });
   return { reply: newMessage, suggestions: null };
 }
 
 async function handleAddressSelection(suggestionType, userSelection, orderId) {
   const fieldMap = {
-    'suggest-pickup': 'pickup_address',
-    'suggest-dropoff': 'dropoff_address',
+    'suggestPickup': 'pickup_address',
+    'suggestDropoff': 'dropoff_address',
     'pickup': 'pickup_address',
     'dropoff': 'dropoff_address'
   };
@@ -306,12 +307,12 @@ async function handleAddressSelection(suggestionType, userSelection, orderId) {
   const selectedFullAddress = await getFullAddress(userSelection);
   const updates = { [addressField]: selectedFullAddress };
 
-  const result = await modifyOrder(orderId, updates);
+  const result = await updateOrderData(orderId, updates);
 
   const newMessage = await generateCustomMessage({
-    intent: "address-selection",
+    intent: "addressSelection",
     status: result.success
-      ? result.hasAllRequired ? "order-complete" : "order-pending"
+      ? result.hasAllRequired ? "orderComplete" : "orderPending"
       : result.reason || "error"
   });
   newSuggestions = await getSugestionForCompleteOrder(result.hasAllRequired);
@@ -319,13 +320,50 @@ async function handleAddressSelection(suggestionType, userSelection, orderId) {
     reply: newMessage,
     suggestions: newSuggestions,
     orderId,
-    suggestionType: result.hasAllRequired ? "order-confirmation" : suggestionType
+    suggestionType: result.hasAllRequired ? "orderConfirmation" : suggestionType
   };
 }
 
 async function cancelOrder(orderId) {
   const result = await updateOrderStatus(orderId, "cancelled");
   return result;
+}
+
+async function updateOrderData(orderId, modifications) {
+  console.log("modifications", modifications);
+
+  if(modifications?.items) {
+    for (const mod of modifications.items) {
+      console.log("mod", mod);
+      
+      const { type, item, quantity = 1, newItem } = mod;
+      const exists = await itemExists(orderId, item);
+
+      if (exists) {
+        if (type === 'add' || type === 'remove') {
+          const value = type === 'add' ? quantity : -quantity;
+          return await modifyItem(orderId, item, value);
+        } else if (type === 'replace') {
+          return await modifyItem(orderId, item, newItem);
+        }
+      } else {
+        if (type === 'add') {
+          return await addItem(orderId, { item: newItem || item, quantity });
+        } else if (type === 'replace') {
+          const newItemExists = await itemExists(orderId, newItem);
+          if(newItemExists) {
+            return {success: false, reason: "item_already_exists"};
+          } else {
+            return await addItem(orderId, { item: newItem || item, quantity });
+          }
+        }else {
+          return {success: false, reason: "item_not_found"};
+        }
+      }
+    }
+  } else {
+    return await modifyOrder(orderId, modifications);
+  }
 }
 
 module.exports = {

@@ -6,25 +6,13 @@ async function modifyOrder(orderId, updates = {}) {
     const orderRef = await db.collection('orders').doc(orderId);
     const orderSnapshot = await orderRef.get();
 
-    if (!orderSnapshot.exists) {
-      return { success: false, reason: 'order_not_found', hasAllRequired: false };
+   const validation = await validateOrderBeforeModification(orderSnapshot);
+    if (!validation.valid) {
+      return { success: false, reason: validation.reason, message: validation.message };
     }
-    
     const orderData = orderSnapshot.data();
-    console.log("order found", orderData);
-    console.log("updates", updates);
-    
-    if (orderData.status === 'cancelled' || 
-        (orderData.status === 'confirmed' && orderData.payment_status == "success")) {
-      return {
-        success: false,
-        reason: 'not_modifiable',
-        hasAllRequired: false,
-        message: 'Order cannot be modified once confirmed or already cancelled'
-      };
-    }
 
-    const allowedFields = ['pickup_address', 'dropoff_address', 'items', 'driver_notes', 'status', 'package_status'];
+    const allowedFields = ['pickup_address', 'dropoff_address', 'driver_notes', 'status', 'package_status'];
     const updatePayload = {};
 
     // Only update allowed fields if they are present in the updates
@@ -218,7 +206,91 @@ async function getOrderIntent(orderId) {
   }
 }
 
+async function itemExists(orderId, itemName) {
+  const orderRef = db.collection('orders').doc(orderId);
+  const snapshot = await orderRef.get();
+  if (!snapshot.exists) return false;
+
+  const data = snapshot.data();
+  return data.items?.some(i => i.item.toLowerCase() === itemName.toLowerCase());
+}
+
+async function validateOrderBeforeModification(orderSnapshot) {
+  if (!orderSnapshot.exists) {
+    return {
+      valid: false,
+      reason: 'order_not_found',
+      message: 'Order not found',
+    };
+  }
+
+  const order = orderSnapshot.data();
+
+  if (order.status === 'cancelled' || (order.status === 'confirmed' && order.payment_status === 'success')) {
+    return {
+      valid: false,
+      reason: 'not_modifiable',
+      message: 'Order cannot be modified after confirmation or cancellation',
+      order,
+    };
+  }
+
+  return { valid: true, order };
+}
+
+
+async function modifyItem(orderId, itemName, value) {
+  const orderRef = db.collection('orders').doc(orderId);
+  const snapshot = await orderRef.get();
+
+  const validation = await validateOrderBeforeModification(snapshot);
+  if (!validation.valid) {
+    return { success: false, reason: validation.reason, message: validation.message };
+  }
+
+  let items = snapshot.data().items || [];
+  const index = items.findIndex(i => i.item.toLowerCase() === itemName.toLowerCase());
+
+  if (index > -1) {
+    if (typeof value === 'string') {
+      // replace item name
+      items[index].item = value;
+    } else if (typeof value === 'number') {
+      items[index].quantity += value;
+      if (items[index].quantity <= 0) items.splice(index, 1); 
+    }
+    await orderRef.update({ items });
+    const hasAllRequired = checkHasAllRequired(snapshot.data(), items);
+    return { success: true, hasAllRequired: hasAllRequired };
+  }
+}
+
+async function addItem(orderId, newItem) {
+    
+    const orderRef = db.collection('orders').doc(orderId);
+    const snapshot = await orderRef.get();
+
+    const validation = await validateOrderBeforeModification(snapshot);
+    if (!validation.valid) {
+      return { success: false, reason: validation.reason, message: validation.message };
+    }
+  let items = snapshot.data().items || [];
+  items.push(newItem);
+  await orderRef.update({ items });
+  const hasAllRequired = checkHasAllRequired(snapshot.data(), items);
+  return { success: true, hasAllRequired: hasAllRequired };
+}
+
+function checkHasAllRequired(order, items) {
+  return (
+    typeof order.pickup_address === 'string' &&
+    typeof order.dropoff_address === 'string' &&
+    Array.isArray(items) &&
+    items.length > 0
+  );
+}
 
 module.exports = {
-  createOrder, modifyOrder, isOrderActive, getOrderIntent, updateOrderStatus, updatePaymentStatus
+  createOrder, modifyOrder, isOrderActive, getOrderIntent, 
+  updateOrderStatus, updatePaymentStatus, addItem, modifyItem, itemExists
 };

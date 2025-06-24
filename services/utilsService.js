@@ -4,24 +4,24 @@ async function resolveAddress(aiResponse, userLocation) {
     }
     const {
     intent,
-    "pickup-place": aiPickupPlace,
-    "pickup-address": aiPickupAddress,
-    "dropoff-place": aiDropoffPlace,
-    "dropoff-address": aiDropoffAddress,
+    pickupPlace,
+    pickupAddress,
+    dropoffPlace,
+    dropoffAddress,
   } = aiResponse;
 
     let address = {};
 
-    if(intent === "pickup" || intent === "suggest-pickup") {
-        address.pickupAddress = aiPickupAddress;
-        address.pickupPlace = aiPickupPlace;
+    if(intent === "pickup" || intent === "suggestPickup") {
+        address.pickupAddress = pickupAddress;
+        address.pickupPlace = pickupPlace;
         address.dropoffAddress = userLocation;
-        address.dropoffPlace = aiDropoffPlace;
-    } else if(intent === "dropoff" || intent === "suggest-dropoff") {
+        address.dropoffPlace = dropoffPlace;
+    } else if(intent === "dropoff" || intent === "suggestDropoff") {
         address.pickupAddress = userLocation;
-        address.pickupPlace = aiPickupPlace;
-        address.dropoffAddress = aiDropoffAddress;
-        address.dropoffPlace = aiDropoffPlace;
+        address.pickupPlace = pickupPlace;
+        address.dropoffAddress = dropoffAddress;
+        address.dropoffPlace = dropoffPlace;
     } else {
         return null;
     }

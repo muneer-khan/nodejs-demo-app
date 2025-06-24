@@ -34,7 +34,7 @@ router.post('/', authenticateToken, async (req, res) => {
       const response = await handleTextMessage(userMessage, hasActiveOrder);
       aiResponse = response.aiResponse;
       topic = response.topic;
-      customResponse = await handleAiResponse(aiResponse.content, userLocation, hasActiveOrder, userId, orderId);
+      customResponse = await handleAiResponse(aiResponse, userLocation, hasActiveOrder, userId, orderId);
     }
 
     if (messageType === 'selection') {
@@ -49,9 +49,9 @@ router.post('/', authenticateToken, async (req, res) => {
     customResponse.sessionId = chatSessionId;
 
     if (!hasActiveOrder) {
-      const address = await resolveAddress(aiResponse?.content, userLocation);
+      const address = await resolveAddress(aiResponse, userLocation);
       if (address) {
-        const newOrder = await createOrderFromAIResponse(aiResponse.content, userId, chatSessionId, address);
+        const newOrder = await createOrderFromAIResponse(aiResponse, userId, chatSessionId, address);
         customResponse.orderId = newOrder.orderId;
       } else {
         customResponse.orderId = "";
