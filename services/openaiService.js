@@ -129,7 +129,7 @@ async function getDemoNewOrderResponses(messages) {
 async function getDemoExistingOrderResponse(params) {
   const demo_replace_item = {
     "action": "modify",
-    "items": [{type: "replace", item: "garlic bread", newItem: "pizza"}],
+    "items": [{type: "replace", item: "garlic bread", newItem: "Pizza"}],
   }
 
   const demo_add_item = {

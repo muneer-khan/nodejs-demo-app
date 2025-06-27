@@ -42,6 +42,8 @@ const SuggestionTypes = {
 const OrderFields = {
     PICKUP_ADDRESS: "pickupAddress",
     DROPOFF_ADDRESS: "dropoffAddress",
+    PICKUP_PLACE: "pickupPlace",
+    DROPOFF_PLACE: "dropoffPlace",
     ITEMS: "items"
 }
 

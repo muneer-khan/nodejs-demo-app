@@ -229,11 +229,7 @@ async function getOrderIntent(orderId) {
 }
 
 async function itemExists(orderId, itemName) {
-  const orderRef = db.collection('orders').doc(orderId);
-  const snapshot = await orderRef.get();
-  if (!snapshot.exists) return false;
-
-  const data = snapshot.data();
+  const data = await getOrderData(orderId);
   return data.items?.some(i => i.item.toLowerCase() === itemName.toLowerCase());
 }
 

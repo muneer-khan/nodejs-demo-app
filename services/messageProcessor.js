@@ -6,7 +6,6 @@ const { getDemoExistingOrderResponse, getDemoNewOrderResponses, getAIResponse} =
 const { ConfirmationLabels, PromptTypes, DefaultLabels, ActionTypes, 
   SuggestionTypes, OrderFields, IntentTypes, 
   AddressSearchTypes, OrderStatus, StatusType} = require("../appStrings");
-const { resolveAddress } = require("./utilsService");
 
 const fieldMap = {
   'suggestPickup': 'pickupAddress',
@@ -73,12 +72,14 @@ async function handleActiveOrder(data, userLocation, userId, orderId) {
   let newOrderId = orderId;
   let newSuggestions;
   let newSuggestionType;
+  let completedOrder;
   if(action === ActionTypes.MODIFY) { 
     const result = await updateOrderData(orderId, data);
     if(result.success) {
       const suggestionData = await getSugestions(result.hasAllRequired, orderId);
       newSuggestions = suggestionData.suggestions;
       newSuggestionType = suggestionData.suggestionType;
+      completedOrder = suggestionData.completedOrder
       message = await generateCustomMessage({intent: action, hasAllRequired: result.hasAllRequired});
     } else {
       message = await generateCustomMessage({intent: action, status: "failed", reason});
@@ -103,37 +104,45 @@ async function handleActiveOrder(data, userLocation, userId, orderId) {
       reply: message,
       orderId: newOrderId,
       suggestions: newSuggestions,
-      suggestionType: newSuggestionType
+      suggestionType: newSuggestionType,
+      completedOrder: completedOrder
   };
 }
 
 async function getSugestions(hasAllRequired, orderId='') {
   const userLocation = "564 Pharmacy Ave, Scarborough, ON";
-
+  const orderData = await getOrderData(orderId);
   if(hasAllRequired) {
     const suggestions =  [{ name: ConfirmationLabels.CONFIRM }, { name: ConfirmationLabels.CANCEL }]  
-    return { suggestions: suggestions, suggestionType: SuggestionTypes.ORDER_CONFIRMATION };
+    return { suggestions: suggestions, suggestionType: SuggestionTypes.ORDER_CONFIRMATION, completedOrder: orderData };
   } else {
-    const orderData = await getOrderData(orderId);
     const missingField = getMissingFields(orderData);
-    console.log(missingField);
-    console.log(orderData);
     
-    
-    if(missingField != 'item') {
+    if(missingField == OrderFields.PICKUP_ADDRESS || missingField == OrderFields.DROPOFF_ADDRESS) {
       const placeResolution = await resolvePlace({
         placeName: missingField == OrderFields.PICKUP_ADDRESS ? orderData.pickup_place : orderData.dropoff_place,
         fallbackLocation: userLocation,
       });
       const suggestionType = missingField == OrderFields.PICKUP_ADDRESS ? SuggestionTypes.SUGGEST_PICKUP : SuggestionTypes.SUGGEST_DROPOFF;
-      
       return { suggestions: placeResolution.suggestions, suggestionType: suggestionType }
+    } else if(missingField == OrderFields.PICKUP_PLACE || missingField == OrderFields.DROPOFF_PLACE) {
+      const suggestions = await searchPlaces({
+        query: orderData.items[0].item,
+        nearLocation: userLocation,
+        type: AddressSearchTypes.ITEM,
+      });
+      const suggestionType = missingField == OrderFields.PICKUP_PLACE ? SuggestionTypes.SUGGEST_PICKUP : SuggestionTypes.SUGGEST_DROPOFF;
+      return { suggestions: suggestions, suggestionType: suggestionType };
+    } else {
+      //suggest items
     }
   }
 }
 
 function getMissingFields(order) {
-  if (order.pickup_place && !order.pickup_address) return OrderFields.pickupAddress;
+  if (!order.pickup_place && !order.pickup_address) return OrderFields.PICKUP_PLACE;
+  if (!order.dropoff_place && !order.dropoff_address) return OrderFields.DROPOFF_PLACE;
+  if (order.pickup_place && !order.pickup_address) return OrderFields.PICKUP_ADDRESS;
   if (order.dropoff_place && !order.dropoff_address) return OrderFields.DROPOFF_ADDRESS;
   if (!Array.isArray(order.items) || order.items.length === 0) return OrderFields.ITEMS;
 }
@@ -231,6 +240,7 @@ async function resolvePlace({
       status: OrderStatus.COMPLETE,
       suggestions: orderConfirmSuggestion.suggestions,
       suggestionType: orderConfirmSuggestion.suggestionType,
+      completedOrder: orderConfirmSuggestion.completedOrder
     };
   }
 
@@ -352,7 +362,8 @@ async function handleAddressSelection(suggestionType, userSelection, orderId) {
     reply: newMessage,
     suggestions: newSuggestions.suggestions,
     orderId,
-    suggestionType: newSuggestions.suggestionType
+    suggestionType: newSuggestions.suggestionType,
+    completedOrder: newSuggestions.completedOrder
   };
 }
 
@@ -369,10 +380,17 @@ async function updateOrderData(orderId, modifications) {
 
       if (exists) {
         if (type === ActionTypes.ADD || type === ActionTypes.REMOVE) {
-          const value = type === ActionTypes.REMOVE ? quantity : -quantity;
+          const value = type === ActionTypes.ADD ? quantity : -quantity;
           return await modifyItem(orderId, item, value);
         } else if (type === ActionTypes.REPLACE) {
-          return await modifyItem(orderId, item, newItem);
+          const newItemExists = await itemExists(orderId, newItem);
+          
+          if(newItemExists) {
+            await modifyItem(orderId, item, -quantity);
+            return await modifyItem(orderId, newItem, quantity);
+          } else {
+            return await modifyItem(orderId, item, newItem);
+          }
         }
       } else {
         if (type === ActionTypes.ADD) {
@@ -380,11 +398,11 @@ async function updateOrderData(orderId, modifications) {
         } else if (type === ActionTypes.REPLACE) {
           const newItemExists = await itemExists(orderId, newItem);
           if(newItemExists) {
-            return {success: false, reason: "item_already_exists"};
+            return await modifyItem(orderId, newItem, quantity);
           } else {
-            return await addItem(orderId, { item: newItem || item, quantity });
+            return await addItem(orderId, { item: newItem, quantity });
           }
-        }else {
+        } else {
           return {success: false, reason: "item_not_found"};
         }
       }

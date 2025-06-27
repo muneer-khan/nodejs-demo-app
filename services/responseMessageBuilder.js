@@ -53,7 +53,7 @@ async function generateCustomMessage({
           return `Error modifying your order`
         } 
       } else {
-        return `Your order has been modified successfully. ${hasAllRequired ? 'Please confirm your order or modify the items if you need.' : 'To complete your order,'}`;  
+        return `Your order has been modified successfully. Please confirm your order or modify the items if you need.`;  
       }
     case ActionTypes.CONFIRM:
       if(status === "not_confirmed") {
