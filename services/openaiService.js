@@ -139,7 +139,7 @@ async function getDemoExistingOrderResponse(params) {
 
   const demo_remove_item = {
     "action": "modify",
-    "items": [{type: "remove", item: "pizza", quantity: 1}],
+    "items": [{type: "remove", item: "garlic bread", quantity: 1}],
   }
 
   const new_order = {
@@ -161,7 +161,7 @@ const modify_pickup_place = {
 
 const demo_modify_address = {
   "action": "modify",
-  "pickupAddress": "2235 Sheppard Ave, E, Scarborough, ON"
+  "pickupAddress": "2233 Sheppard Ave, E, Scarborough, ON"
 }
 
 const information = {
@@ -173,34 +173,34 @@ const information = {
 const out_of_scope = {
   "action": "oos",
 }
-  if( params.includes("add") ) {
+  if(params == "add" ) {
     return demo_add_item ;
   }
-  if( params.includes("replace") ) {
+  if(params.includes("replace") ) {
     return demo_replace_item ;
   }
-  if( params.includes("remove") ) {
+  if(params.includes("remove") ) {
     return demo_remove_item ;
   }
-  if( params.includes("cancel") ) {
+  if(params.includes("cancel") ) {
     return cancel_order ;
   }
-  if( params.includes("modify place") ) {
+  if(params.includes("modify place") ) {
     return modify_pickup_place ;
   }
-  if( params.includes("change address") ) {
+  if(params.includes("change address") ) {
     return demo_modify_address ;
   }
-  if( params.includes("information") ) {
+  if(params.includes("information") ) {
     return information ;
   }
-  if( params.includes("out of scope")) {
+  if(params.includes("out of scope")) {
     return out_of_scope ;
   }
-  if( params.includes("new order")) {
+  if(params.includes("new order")) {
     return new_order ;
   }
-  if( params.includes("confirm")) {
+  if(params.includes("confirm")) {
     return confirm_order ;
   }
   return out_of_scope ;

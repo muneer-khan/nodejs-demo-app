@@ -1,6 +1,14 @@
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../services/firebase');
 
+const fieldMap = {
+  pickupAddress: 'pickup_address',
+  dropoffAddress: 'dropoff_address',
+  driverNotes: 'driver_notes',
+  pickupPlace: 'pickup_place',
+  dropoffPlace: 'dropoff_place',
+};
+
 async function modifyOrder(orderId, updates = {}) {
   try {
     const orderRef = await db.collection('orders').doc(orderId);
@@ -12,15 +20,7 @@ async function modifyOrder(orderId, updates = {}) {
     }
     const orderData = orderSnapshot.data();
 
-    const allowedFields = ['pickup_address', 'dropoff_address', 'driver_notes', 'status', 'package_status'];
-    const updatePayload = {};
-
-    // Only update allowed fields if they are present in the updates
-    for (const key of allowedFields) {
-      if (updates[key] !== undefined) {
-        updatePayload[key] = updates[key];
-      }
-    }
+    const updatePayload = mapRequestToDbFields(updates);
     const finalData = {
           ...orderData,
           ...updatePayload
@@ -44,6 +44,18 @@ async function modifyOrder(orderId, updates = {}) {
     console.error('Error modifying order:', error.message);
     return { success: false, reason: 'error',error: error.message };
   }
+}
+
+function mapRequestToDbFields(requestData) {
+  const mappedData = {};
+
+  for (const [reqKey, dbKey] of Object.entries(fieldMap)) {
+    if (requestData.hasOwnProperty(reqKey)) {
+      mappedData[dbKey] = requestData[reqKey];
+    }
+  }
+
+  return mappedData;
 }
 
 async function createOrder({
@@ -189,6 +201,16 @@ async function isOrderActive(orderId) {
   }
 }
 
+async function getOrderData(orderId) {
+  const orderRef = db.collection('orders').doc(orderId);
+  const snapshot = await orderRef.get();
+  if (!snapshot.exists) return null;
+
+  return snapshot.data();
+}
+
+
+
 async function getOrderIntent(orderId) {
   try {
     const orderRef = await db.collection('orders').doc(orderId);
@@ -290,7 +312,8 @@ function checkHasAllRequired(order, items) {
   );
 }
 
+
 module.exports = {
-  createOrder, modifyOrder, isOrderActive, getOrderIntent, 
+  createOrder, modifyOrder, isOrderActive, getOrderIntent, getOrderData,
   updateOrderStatus, updatePaymentStatus, addItem, modifyItem, itemExists
 };

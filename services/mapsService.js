@@ -46,7 +46,7 @@ function isValidAddress(address) {
 }
 
 async function getFullAddress(address) {
-  return "2235 Sheppard Ave E, North York, ON, M1L 3G9"
+  return address
 }
 
 module.exports = {

@@ -1,12 +1,22 @@
 const { generateCustomMessage } = require("./responseMessageBuilder");
-const { modifyOrder, updateOrderStatus, createOrder, updatePaymentStatus, itemExists, addItem, modifyItem } = require("./orderService");
+const { modifyOrder, updateOrderStatus, createOrder, updatePaymentStatus, itemExists, addItem, modifyItem, getOrderData } = require("./orderService");
 const { searchPlaces, getFullAddress } = require("./mapsService");
 const { getPrompt } = require("./promptService");
 const { getDemoExistingOrderResponse, getDemoNewOrderResponses, getAIResponse} = require('../services/openaiService');
-const { response } = require("express");
+const { ConfirmationLabels, PromptTypes, DefaultLabels, ActionTypes, 
+  SuggestionTypes, OrderFields, IntentTypes, 
+  AddressSearchTypes, OrderStatus, StatusType} = require("../appStrings");
+const { resolveAddress } = require("./utilsService");
+
+const fieldMap = {
+  'suggestPickup': 'pickupAddress',
+  'suggestDropoff': 'dropoffAddress',
+  'pickup': 'pickupAddress',
+  'dropoff': 'dropoffAddress'
+};
 
 async function handleTextMessage(userMessage, hasActiveOrder) {
-  const systemPrompt = await getPrompt(hasActiveOrder ? "active_order" : "new_order");
+  const systemPrompt = await getPrompt(hasActiveOrder ? PromptTypes.ACTIVE_ORDER : PromptTypes.NEW_ORDER);
   const messages = [
     { role: "system", content: systemPrompt },
     { role: "user", content: userMessage }
@@ -19,7 +29,7 @@ async function handleTextMessage(userMessage, hasActiveOrder) {
     ? await getDemoExistingOrderResponse(userMessage)
     : await getDemoNewOrderResponses(userMessage);
 
-  const topic = hasActiveOrder ? null : aiResponse.topic || "General Inquiry";
+  const topic = hasActiveOrder ? null : aiResponse.topic || DefaultLabels.TOPIC;
   return { aiResponse, topic };
 }
 
@@ -63,29 +73,29 @@ async function handleActiveOrder(data, userLocation, userId, orderId) {
   let newOrderId = orderId;
   let newSuggestions;
   let newSuggestionType;
-
-  if(action === "modify") { 
+  if(action === ActionTypes.MODIFY) { 
     const result = await updateOrderData(orderId, data);
     if(result.success) {
-      newSuggestions = await getSugestionForCompleteOrder(result.hasAllRequired);
-      newSuggestionType = "orderConfirmation"
+      const suggestionData = await getSugestions(result.hasAllRequired, orderId);
+      newSuggestions = suggestionData.suggestions;
+      newSuggestionType = suggestionData.suggestionType;
       message = await generateCustomMessage({intent: action, hasAllRequired: result.hasAllRequired});
     } else {
       message = await generateCustomMessage({intent: action, status: "failed", reason});
     }
-  } else if(action === "confirm") { 
-    return await handleOrderConfirmation("confirm", orderId)
-  } else if(action === "cancel") {
-    return await handleOrderConfirmation("cancel", orderId)
-  } else if(action === "info") {
+  } else if(action === ActionTypes.CONFIRM) { 
+    return await handleOrderConfirmation(action, orderId)
+  } else if(action === ActionTypes.CANCEL) {
+    return await handleOrderConfirmation(action, orderId)
+  } else if(action === ActionTypes.INFO) {
     return {
       reply: notes,
       orderId: newOrderId,
       suggestions: null
     };
-  } else if(action === "oos") {
+  } else if(action === ActionTypes.OUT_OF_SCOPE) {
     message = await generateCustomMessage({intent: action});
-  } else if(action === "newOrder") {
+  } else if(action === ActionTypes.NEW_ORDER) {
     message = await generateCustomMessage({intent: action});
     newOrderId = ''
   }
@@ -97,10 +107,35 @@ async function handleActiveOrder(data, userLocation, userId, orderId) {
   };
 }
 
-async function getSugestionForCompleteOrder(hasAllRequired) {
-  return hasAllRequired
-      ? [{ name: "Confirm Order" }, { name: "Cancel Order" }]
-      : null
+async function getSugestions(hasAllRequired, orderId='') {
+  const userLocation = "564 Pharmacy Ave, Scarborough, ON";
+
+  if(hasAllRequired) {
+    const suggestions =  [{ name: ConfirmationLabels.CONFIRM }, { name: ConfirmationLabels.CANCEL }]  
+    return { suggestions: suggestions, suggestionType: SuggestionTypes.ORDER_CONFIRMATION };
+  } else {
+    const orderData = await getOrderData(orderId);
+    const missingField = getMissingFields(orderData);
+    console.log(missingField);
+    console.log(orderData);
+    
+    
+    if(missingField != 'item') {
+      const placeResolution = await resolvePlace({
+        placeName: missingField == OrderFields.PICKUP_ADDRESS ? orderData.pickup_place : orderData.dropoff_place,
+        fallbackLocation: userLocation,
+      });
+      const suggestionType = missingField == OrderFields.PICKUP_ADDRESS ? SuggestionTypes.SUGGEST_PICKUP : SuggestionTypes.SUGGEST_DROPOFF;
+      
+      return { suggestions: placeResolution.suggestions, suggestionType: suggestionType }
+    }
+  }
+}
+
+function getMissingFields(order) {
+  if (order.pickup_place && !order.pickup_address) return OrderFields.pickupAddress;
+  if (order.dropoff_place && !order.dropoff_address) return OrderFields.DROPOFF_ADDRESS;
+  if (!Array.isArray(order.items) || order.items.length === 0) return OrderFields.ITEMS;
 }
 
 async function handleNewOrder(data, userLocation) {
@@ -116,7 +151,7 @@ async function handleNewOrder(data, userLocation) {
 
   console.log('Parsed Intent:', data);
   
-  if (intent === "pickup" || intent === "dropoff") {
+  if (intent === IntentTypes.PICKUP || intent === IntentTypes.DROPOFF) {
     const placeResolution = await resolvePlace({
       placeName: pickupPlace || dropoffPlace,
       address: pickupAddress || dropoffAddress,
@@ -138,14 +173,14 @@ async function handleNewOrder(data, userLocation) {
     };
   }
 
-  if (intent === "info" || intent === "greetings") {
+  if (intent === IntentTypes.INFO || intent === IntentTypes.GREETINGS) {
     return {
       reply: notes,
       suggestions: null
     };
   }
 
-  if (intent === "oos") {
+  if (intent === IntentTypes.OUT_OF_SCOPE) {
     const message = await generateCustomMessage({intent});
 
     return {
@@ -154,13 +189,13 @@ async function handleNewOrder(data, userLocation) {
     };
   }
 
-  if (intent === "suggestion" || intent === "suggestPickup" || intent === "suggestDropoff") {
+  if (intent === IntentTypes.SUGGEST_PICKUP || intent === IntentTypes.SUGGEST_DROPOFF) {
     const message = await generateCustomMessage({intent, items: items[0].item});
     if(items.length > 0) {
       const suggestions = await searchPlaces({
         query: items[0].item,
         nearLocation: userLocation,
-        type: 'item',
+        type: AddressSearchTypes.ITEM,
       });
       return {
         reply: message,
@@ -174,6 +209,12 @@ async function handleNewOrder(data, userLocation) {
       };
     }
   }
+
+  if(intent == IntentTypes.SUGGESTION) {
+    return {
+        reply: "Here some suggestions, would you like to pickup or dropoff?"
+    }
+  }
 }
 
 
@@ -185,11 +226,11 @@ async function resolvePlace({
   console.log('Resolving place with:', { placeName, address, fallbackLocation });
   
   if (address) {
-    const orderConfirmSuggestion = await getSugestionForCompleteOrder(true);
+    const orderConfirmSuggestion = await getSugestions(true);
     return {
-      status: 'complete',
-      suggestions: orderConfirmSuggestion,
-      suggestionType: "orderConfirmation"
+      status: OrderStatus.COMPLETE,
+      suggestions: orderConfirmSuggestion.suggestions,
+      suggestionType: orderConfirmSuggestion.suggestionType,
     };
   }
 
@@ -197,17 +238,17 @@ async function resolvePlace({
     const suggestions = await searchPlaces({
       query: placeName,
       nearLocation: fallbackLocation,
-      type: 'place',
+      type: AddressSearchTypes.PLACE,
     });
 
     if (suggestions.length > 0) {
       return {
-        status: 'suggested',
+        status: AddressSearchTypes.SUGGESTED,
         suggestions: suggestions
       };
     } else {
       return {
-        status: 'not_found',
+        status: AddressSearchTypes.NOT_FOUND,
         suggestions: null
       };
     }
@@ -215,7 +256,7 @@ async function resolvePlace({
 
   if (!placeName) {
     return {
-      status: 'missing_name',
+      status: AddressSearchTypes.MISSING_NAME,
       suggestions: null
     };
   }
@@ -224,16 +265,16 @@ async function resolvePlace({
 
 async function handleSelectionMessage(userSelection, selectedSuggestionType, userId, orderId) {
   switch (selectedSuggestionType) {
-    case "orderConfirmation":
+    case SuggestionTypes.ORDER_CONFIRMATION:
       const action = await getOrderConfirmationAction(userSelection);
       return handleOrderConfirmation(action, orderId);
-    case "paymentTypes":
+    case SuggestionTypes.PAYMENT_TYPES:
       return handlePayment(userSelection, orderId);
-    case "suggestPickup":
-    case "suggestDropoff":
-    case "pickup":
-    case "dropoff":
-      return handleAddressSelection(selectedSuggestionType, userSelection, orderId);
+    case SuggestionTypes.SUGGEST_PICKUP:
+    case SuggestionTypes.SUGGEST_DROPOFF:
+    case IntentTypes.PICKUP:
+    case IntentTypes.DROPOFF:
+      return handleAddressSelection(selectedSuggestionType, userSelection, orderId);  
     default:
       return {
         reply: "Sorry, I didn’t understand your selection.",
@@ -245,7 +286,7 @@ async function handleSelectionMessage(userSelection, selectedSuggestionType, use
 async function handleOrderConfirmation(action, orderId) {
   let newMessage;
 
-  if (action.toLowerCase() === "confirm") {
+  if (action.toLowerCase() === ActionTypes.CONFIRM) {
     const result = await confirmOrder(orderId);
     if (result.success) {
       const paymentTypes = [
@@ -263,13 +304,13 @@ async function handleOrderConfirmation(action, orderId) {
         suggestionType: "paymentTypes"
       };
     } else {
-      newMessage = await generateCustomMessage({ intent: "confirmOrder", status: result.reason });
+      newMessage = await generateCustomMessage({ intent: action, status: result.reason });
       return { reply: newMessage, suggestions: null, orderId: null };
     }
-  } else if (action.toLowerCase() === "cancel") {
+  } else if (action.toLowerCase() === ActionTypes.CANCEL) {
     const result = await cancelOrder(orderId);
     newMessage = await generateCustomMessage({
-      intent: "cancelOrder",
+      intent: action,
       status: result.success ? undefined : result.reason
     });
     return { reply: newMessage, suggestions: null };
@@ -277,32 +318,25 @@ async function handleOrderConfirmation(action, orderId) {
 }
 
 async function getOrderConfirmationAction(userMessage) {
-  if(userMessage == "Confirm Order") {
-    return "confirm"
-  } else if (userMessage == "Cancel Order") {
-    return "cancel"
+  if(userMessage == ConfirmationLabels.CONFIRM) {
+    return ActionTypes.CONFIRM;
+  } else if (userMessage == ConfirmationLabels.CANCEL) {
+    return ActionTypes.CANCEL;
   }
 }
 
 async function confirmOrder(orderId) {
-  const result = await updateOrderStatus(orderId, "confirmed");
+  const result = await updateOrderStatus(orderId, OrderStatus.CONFIRMED);
   return result;
 }
 
 async function handlePayment(userSelection, orderId) {
-  const result = await updatePaymentStatus(orderId, "success", userSelection)
+  const result = await updatePaymentStatus(orderId, StatusType.SUCCESS, userSelection)
   const newMessage = await generateCustomMessage({ intent: "paymentSuccess", method: userSelection });
   return { reply: newMessage, suggestions: null };
 }
 
 async function handleAddressSelection(suggestionType, userSelection, orderId) {
-  const fieldMap = {
-    'suggestPickup': 'pickup_address',
-    'suggestDropoff': 'dropoff_address',
-    'pickup': 'pickup_address',
-    'dropoff': 'dropoff_address'
-  };
-
   const addressField = fieldMap[suggestionType];
   const selectedFullAddress = await getFullAddress(userSelection);
   const updates = { [addressField]: selectedFullAddress };
@@ -310,46 +344,40 @@ async function handleAddressSelection(suggestionType, userSelection, orderId) {
   const result = await updateOrderData(orderId, updates);
 
   const newMessage = await generateCustomMessage({
-    intent: "addressSelection",
-    status: result.success
-      ? result.hasAllRequired ? "orderComplete" : "orderPending"
-      : result.reason || "error"
+    intent: ActionTypes.MODIFY,
+    status: result.reason
   });
-  newSuggestions = await getSugestionForCompleteOrder(result.hasAllRequired);
+  const newSuggestions = await getSugestions(result.hasAllRequired, orderId);
   return {
     reply: newMessage,
-    suggestions: newSuggestions,
+    suggestions: newSuggestions.suggestions,
     orderId,
-    suggestionType: result.hasAllRequired ? "orderConfirmation" : suggestionType
+    suggestionType: newSuggestions.suggestionType
   };
 }
 
 async function cancelOrder(orderId) {
-  const result = await updateOrderStatus(orderId, "cancelled");
+  const result = await updateOrderStatus(orderId, OrderStatus.CANCELLED);
   return result;
 }
 
 async function updateOrderData(orderId, modifications) {
-  console.log("modifications", modifications);
-
   if(modifications?.items) {
     for (const mod of modifications.items) {
-      console.log("mod", mod);
-      
       const { type, item, quantity = 1, newItem } = mod;
       const exists = await itemExists(orderId, item);
 
       if (exists) {
-        if (type === 'add' || type === 'remove') {
-          const value = type === 'add' ? quantity : -quantity;
+        if (type === ActionTypes.ADD || type === ActionTypes.REMOVE) {
+          const value = type === ActionTypes.REMOVE ? quantity : -quantity;
           return await modifyItem(orderId, item, value);
-        } else if (type === 'replace') {
+        } else if (type === ActionTypes.REPLACE) {
           return await modifyItem(orderId, item, newItem);
         }
       } else {
-        if (type === 'add') {
+        if (type === ActionTypes.ADD) {
           return await addItem(orderId, { item: newItem || item, quantity });
-        } else if (type === 'replace') {
+        } else if (type === ActionTypes.REPLACE) {
           const newItemExists = await itemExists(orderId, newItem);
           if(newItemExists) {
             return {success: false, reason: "item_already_exists"};
@@ -361,7 +389,10 @@ async function updateOrderData(orderId, modifications) {
         }
       }
     }
-  } else {
+  }  
+
+  if (Object.keys(modifications).some(key => key !== OrderFields.ITEMS)) {
+    console.log(modifications);
     return await modifyOrder(orderId, modifications);
   }
 }
